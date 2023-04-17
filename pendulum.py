@@ -1,7 +1,7 @@
 import numpy as np
 import torch
-import autograd.numpy as np
-from autograd import grad, jacobian
+#import autograd.numpy as np
+#from autograd import grad, jacobian
 
 def dynamics_analytic(state, action):
     """
@@ -18,21 +18,23 @@ def dynamics_analytic(state, action):
     B = state.shape[0]
 
     # Physical properties
-    dt = 0.01
-    #g = 9.81
-    #mc = 1
-    #mp1 = 0.1
-    #mp2 = 0.1
-    #l1 = 0.5
-    #l2 = 0.5
-    
+
+    dt = 0.05
+
     damp = 0.05
-    g = -9.81
+    g = 9.81
     mc = 10.47197551
     mp1 = 4.19873858
     mp2 = 4.19873858
+
+    L1 = 0.92 # got by solving from M matrix given by mujoco (makes no sense lol but makes M matrix the same thing as mujoco)
+    L2 = 0.92
+
     l1 = 0.3
     l2 = 0.3
+
+    I1 = 0.15497067
+    I2 = 0.15497067
 
     # Extract state
 
@@ -44,34 +46,33 @@ def dynamics_analytic(state, action):
     th2dot = state[:,5]
 
     # Equations of motion
-
-    M = np.array([[mc+mp1+mp2, l1*(mp1*mp2)*np.cos(th1), mp2*l2*np.cos(th2)],
-                    [l1*(mp1*mp2)*np.cos(th1), l1**2*(mp1+mp2), l1*l2*mp2*np.cos(th1-th2)],
-                    [mp2*l2*np.cos(th2), l1*l2*mp2*np.cos(th1-th2), l2**2*mp2]], dtype=np.float64).reshape(B,3,3)
     
-    C = np.array([[l1*(mp1*mp2)*np.sin(th1)*th1dot**2 + l2*mp2*np.sin(th2)*th2dot**2],
-                  [-l1*l2*mp2*np.sin(th1-th2)*th2dot**2    + g*l1*(mp1+mp2)*np.sin(th1) ],
-                  [l1*l2*mp2*np.sin(th1-th2)*th1dot**2 + g*l2*mp2*np.sin(th2)]], dtype=np.float64).reshape(B, 3, 1)
+    M = torch.tensor([[mc+mp1+mp2, (mp1*l1+mp2*L1)*torch.cos(th1), mp2*l2*torch.cos(th2)],
+                  [(mp1*l1+mp2*L1)*torch.cos(th1), mp1*l1**2 + mp2*L1**2 + I1, mp2*L1*l2*torch.cos(th1-th2)],
+                  [mp2*l2*torch.cos(th2), mp2*L1*l2*torch.cos(th1-th2), mp2*l2**2 + I2]], dtype=torch.float64).reshape(B, 3, 3)
+
+    C = torch.tensor([[0, -(mp1*l1+mp2*L1)*torch.sin(th1)*th1dot, -mp2*l2*torch.sin(th2)*th2dot],
+                  [0, 0, mp2*L1*l2*torch.sin(th1-th2)*th2dot],
+                  [0, -mp2*L1*l2*torch.sin(th1-th2)*th1dot, 0]], dtype=torch.float64).reshape(B, 3, 3)
     
-    #G = np.array([[0], [g*l1*(mp1+mp2)*np.sin(th1)], [g*l2*mp2*np.sin(th2)]], dtype=np.float64).reshape(B,3,1)
+    G = torch.tensor([[0], [-(mp1*l1+mp2*L1)*g*torch.sin(th1)], [-mp2*g*l2*torch.sin(th2)]], dtype=torch.float64).reshape(B, 3, 1)
     
-    D = np.array([[damp * xdot], [damp * th1dot], [damp * th2dot]], dtype=np.float64).reshape(B, 3, 1)
+    D = torch.tensor([[damp * xdot], [damp * th1dot], [damp * th2dot]], dtype=torch.float64).reshape(B, 3, 1)
 
-    U = np.array([[action], [0], [0]], dtype=np.float64)
+    U = torch.tensor([[action], [0], [0]], dtype=torch.float64).reshape(B, 3, 1)
+    
+    qdot = torch.tensor([xdot, th1dot, th2dot], dtype=torch.float64).reshape(3,1)
 
-    #F = C + G - D + U
-    F = C - D + U
+    qdotdot = torch.linalg.inv(M)@(U - C@qdot - G - D)
 
-    #statedot = np.linalg.inv(M.reshape(3,3))@F.reshape(3,1)
-    #statedot = statedot.reshape(B,3,1)
-    statedot = np.linalg.inv(M)@F
-    #statedot = torch.bmm(torch.inverse(torch.from_numpy(M)), torch.from_numpy(F)).numpy()
+    #print("analytical", M.reshape(3,3))
+    #print("analytical", (C@qdot + G + D).reshape(1,3))
     
     # Compute next state
 
-    xdd = statedot[:,0]
-    th1dd = statedot[:,1]
-    th2dd = statedot[:,2]
+    xdd = qdotdot[:,0]
+    th1dd = qdotdot[:,1]
+    th2dd = qdotdot[:,2]
 
     next_xdot = xdot + xdd*dt
     next_th1dot = th1dot + th1dd*dt
@@ -81,7 +82,11 @@ def dynamics_analytic(state, action):
     next_th1 = th1 + next_th1dot*dt
     next_th2 = th2 + next_th2dot*dt
 
-    next_state = np.concatenate((next_x, next_th1, next_th2, next_xdot, next_th1dot, next_th2dot), axis=1)
+    # Wrap angles
+    next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
+    next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
+
+    next_state = torch.cat((next_x, next_th1, next_th2, next_xdot, next_th1dot, next_th2dot), 1)
 
     return next_state
 
@@ -96,12 +101,10 @@ def change_of_coords(state):
     th1dot = state[6]
     th2dot = state[7]
 
-    #th1 = np.arctan2(cos_th1_mujoco, sin_th1_mujoco)
-    #th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco)
     th1 = np.arctan2(sin_th1_mujoco, cos_th1_mujoco)
-    th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco)
-    #th2 = th2m + th1
-    return np.array([x, th1, th2m, xdot, th1dot, th2dot]) 
+    th2 = np.arctan2(sin_th2_mujoco, cos_th2_mujoco)
+
+    return torch.tensor([x, th1, th2, xdot, th1dot, th2dot]) 
 
 def T_change_of_coords(state): 
     x = state[:,0].reshape(-1,1)
@@ -113,17 +116,10 @@ def T_change_of_coords(state):
     th1dot = state[:,6].reshape(-1,1)
     th2dot = state[:,7].reshape(-1,1)
 
-    #th1 = np.arctan2(state[:,3],state[:,1]).reshape(-1,1)
-    #th2 = np.arctan2(state[:,2],state[:,4]).reshape(-1,1)
-
-    #th1 = np.arctan2(cos_th1_mujoco, sin_th1_mujoco).reshape(-1,1)
     th1 = np.arctan2(sin_th1_mujoco, cos_th1_mujoco).reshape(-1,1)
-    #th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco).reshape(-1,1)
-    th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco).reshape(-1,1)
-    th2 = th2m + th1
+    th2 = np.arctan2(sin_th2_mujoco, cos_th2_mujoco).reshape(-1,1)
     
-    return np.concatenate((x, th1, th2m, xdot, th1dot, th2dot), axis=1)
-    #return np.concatenate((sin_th1_mujoco, sin_th2_mujoco, th2, cos_th1_mujoco, cos_th2_mujoco, th2dot), axis=1)
+    return np.concatenate((x, th1, th2, xdot, th1dot, th2dot), axis=1)
 
 ## rollout dynamics to obtain an N-length nominal trajectories of states and control inputs
     # T is the trajectory length in timsteps
