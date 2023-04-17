@@ -1,5 +1,7 @@
 import numpy as np
 import torch
+import autograd.numpy as np
+from autograd import grad, jacobian
 
 def dynamics_analytic(state, action):
     """
@@ -150,12 +152,19 @@ def linearize_pytorch(state, control):
         B: torch.tensor of shape (6, 1) representing Jacobian df/du for dynamics f
 
     """
-    state = torch.from_numpy(state)
-    control = torch.from_numpy(control)
-    #state = torch.reshape(state, (1, -1))
-    #control = torch.reshape(control, (1, -1))
-    J = torch.autograd.functional.jacobian(dynamics_analytic, (state, control))
+    # state = torch.from_numpy(state)
+    # control = torch.from_numpy(control)
+    state = state.reshape(1,6)
+    control = control.reshape(1,1)
+    # state = torch.unsqueeze(state, 0)
+    # control = torch.unsqueeze(control, 0)
+    # J = torch.autograd.functional.jacobian(dynamics_analytic, (state, control))
+    # J = torch.autograd.functional.jacobian(dynamics_analytic, (state.detach().cpu().numpy(), control.detach().cpu().numpy()))
+    J = jacobian(dynamics_analytic, (state, control))
+    # J = jacobian(dynamics_analytic)
+    print(J)
     A = J[0].reshape((6, 6))
     B = J[1].reshape((6, 1))
+
 
     return A, B
