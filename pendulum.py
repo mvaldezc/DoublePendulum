@@ -13,32 +13,27 @@ def dynamics_analytic(state, action):
         next_state: torch.tensor of shape (B, 6) representing the next double pendulum state
 
     """
-    next_state = None
-    dt = 0.05
-    g = 9.81
-    mc = 1
-    mp1 = 0.1
-    mp2 = 0.1
-    l1 = 0.5
-    l2 = 0.5
-
-    # --- Your code here
-    '''
-    # Transform mujoco state into global reference frame (generalized coordinates)
-    
-    x = state[0]
-    sin_th1_mujoco = state[1]
-    sin_th2_mujoco = state[2]
-    cos_th1_mujoco = state[3]
-    cos_th2_mujoco = state[4]
-    xdot = state[5]
-    th1dot = state[6]
-    th2dot = state[7]
-
-    th1 = np.arctan2(state[3],state[1])
-    th2 = np.arctan2(state[4],state[2])
-    '''
     B = state.shape[0]
+
+    # Physical properties
+    dt = 0.01
+    #g = 9.81
+    #mc = 1
+    #mp1 = 0.1
+    #mp2 = 0.1
+    #l1 = 0.5
+    #l2 = 0.5
+    
+    damp = 0.05
+    g = -9.81
+    mc = 10.47197551
+    mp1 = 4.19873858
+    mp2 = 4.19873858
+    l1 = 0.3
+    l2 = 0.3
+
+    # Extract state
+
     x = state[:,0]
     th1 = state[:,1]
     th2 = state[:,2]
@@ -53,13 +48,20 @@ def dynamics_analytic(state, action):
                     [mp2*l2*np.cos(th2), l1*l2*mp2*np.cos(th1-th2), l2**2*mp2]], dtype=np.float64).reshape(B,3,3)
     
     C = np.array([[l1*(mp1*mp2)*np.sin(th1)*th1dot**2 + l2*mp2*np.sin(th2)*th2dot**2],
-                  [-l1*l2*mp2*np.sin(th1-th2)*th2dot**2 + g*l1*(mp1+mp2)*np.sin(th1)],
-                    [l1*l2*mp2*np.sin(th1-th2)*th1dot**2 + g*l2*mp2*np.sin(th2)]], dtype=np.float64).reshape(B,3,1)
+                  [-l1*l2*mp2*np.sin(th1-th2)*th2dot**2    + g*l1*(mp1+mp2)*np.sin(th1) ],
+                  [l1*l2*mp2*np.sin(th1-th2)*th1dot**2 + g*l2*mp2*np.sin(th2)]], dtype=np.float64).reshape(B, 3, 1)
+    
+    #G = np.array([[0], [g*l1*(mp1+mp2)*np.sin(th1)], [g*l2*mp2*np.sin(th2)]], dtype=np.float64).reshape(B,3,1)
+    
+    D = np.array([[damp * xdot], [damp * th1dot], [damp * th2dot]], dtype=np.float64).reshape(B, 3, 1)
 
     U = np.array([[action], [0], [0]], dtype=np.float64)
 
-    F = C + U
+    #F = C + G - D + U
+    F = C - D + U
 
+    #statedot = np.linalg.inv(M.reshape(3,3))@F.reshape(3,1)
+    #statedot = statedot.reshape(B,3,1)
     statedot = np.linalg.inv(M)@F
     #statedot = torch.bmm(torch.inverse(torch.from_numpy(M)), torch.from_numpy(F)).numpy()
     
@@ -79,8 +81,6 @@ def dynamics_analytic(state, action):
 
     next_state = np.concatenate((next_x, next_th1, next_th2, next_xdot, next_th1dot, next_th2dot), axis=1)
 
-    # ---
-
     return next_state
 
 
@@ -94,9 +94,12 @@ def change_of_coords(state):
     th1dot = state[6]
     th2dot = state[7]
 
-    th1 = np.arctan2(state[3],state[1])
-    th2 = np.arctan2(state[4],state[2])
-    return np.array([x, th1, th2, xdot, th1dot, th2dot]) 
+    #th1 = np.arctan2(cos_th1_mujoco, sin_th1_mujoco)
+    #th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco)
+    th1 = np.arctan2(sin_th1_mujoco, cos_th1_mujoco)
+    th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco)
+    #th2 = th2m + th1
+    return np.array([x, th1, th2m, xdot, th1dot, th2dot]) 
 
 def T_change_of_coords(state): 
     x = state[:,0].reshape(-1,1)
@@ -108,7 +111,36 @@ def T_change_of_coords(state):
     th1dot = state[:,6].reshape(-1,1)
     th2dot = state[:,7].reshape(-1,1)
 
-    th1 = np.arctan2(state[:,3],state[:,1]).reshape(-1,1)
-    th2 = np.arctan2(state[:,4],state[:,2]).reshape(-1,1)
+    #th1 = np.arctan2(state[:,3],state[:,1]).reshape(-1,1)
+    #th2 = np.arctan2(state[:,2],state[:,4]).reshape(-1,1)
+
+    #th1 = np.arctan2(cos_th1_mujoco, sin_th1_mujoco).reshape(-1,1)
+    th1 = np.arctan2(sin_th1_mujoco, cos_th1_mujoco).reshape(-1,1)
+    #th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco).reshape(-1,1)
+    th2m = np.arctan2(sin_th2_mujoco, cos_th2_mujoco).reshape(-1,1)
+    th2 = th2m + th1
     
-    return np.concatenate((x, th1, th2, xdot, th1dot, th2dot), axis=1)
+    return np.concatenate((x, th1, th2m, xdot, th1dot, th2dot), axis=1)
+    #return np.concatenate((sin_th1_mujoco, sin_th2_mujoco, th2, cos_th1_mujoco, cos_th2_mujoco, th2dot), axis=1)
+
+def linearize_pytorch(state, control):
+    """
+        Linearizes cartpole dynamics around linearization point (state, control). Uses autograd of analytic dynamics
+    Args:
+        state: torch.tensor of shape (6,) representing cartpole state
+        control: torch.tensor of shape (1,) representing the force to apply
+
+    Returns:
+        A: torch.tensor of shape (6, 6) representing Jacobian df/dx for dynamics f
+        B: torch.tensor of shape (6, 1) representing Jacobian df/du for dynamics f
+
+    """
+    state = torch.from_numpy(state)
+    control = torch.from_numpy(control)
+    #state = torch.reshape(state, (1, -1))
+    #control = torch.reshape(control, (1, -1))
+    J = torch.autograd.functional.jacobian(dynamics_analytic, (state, control))
+    A = J[0].reshape((6, 6))
+    B = J[1].reshape((6, 1))
+
+    return A, B
