@@ -1,7 +1,7 @@
 import numpy as np
 import torch
-#import autograd.numpy as np
-#from autograd import grad, jacobian
+import autograd.numpy as np
+from autograd import grad, jacobian
 
 def dynamics_analytic(state, action):
     """
@@ -124,10 +124,10 @@ def T_change_of_coords(state):
 ## rollout dynamics to obtain an N-length nominal trajectories of states and control inputs
     # T is the trajectory length in timsteps
 def rollout_dynamics(T, init_state):
-    xs_nom = np.zeros((T+1, 6))
+    xs_nom = torch.zeros((T+1, 6))
     xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
     # apply a random uk to the dynamical system in open loop
-    us_nom = np.zeros((T, 1))
+    us_nom = torch.zeros((T, 1))
     # loop through T the number of timesteps
     for t in range(T):
         curr_state = xs_nom[t, :].reshape(1,6)
@@ -148,19 +148,10 @@ def linearize_pytorch(state, control):
         B: torch.tensor of shape (6, 1) representing Jacobian df/du for dynamics f
 
     """
-    # state = torch.from_numpy(state)
-    # control = torch.from_numpy(control)
-    state = state.reshape(1,6)
-    control = control.reshape(1,1)
-    # state = torch.unsqueeze(state, 0)
-    # control = torch.unsqueeze(control, 0)
-    # J = torch.autograd.functional.jacobian(dynamics_analytic, (state, control))
-    # J = torch.autograd.functional.jacobian(dynamics_analytic, (state.detach().cpu().numpy(), control.detach().cpu().numpy()))
-    J = jacobian(dynamics_analytic, (state, control))
-    # J = jacobian(dynamics_analytic)
-    print(J)
+    state = torch.unsqueeze(state, 0)
+    control = torch.unsqueeze(control, 0)
+    J = torch.autograd.functional.jacobian(dynamics_analytic, (state, control))
     A = J[0].reshape((6, 6))
     B = J[1].reshape((6, 1))
-
 
     return A, B
