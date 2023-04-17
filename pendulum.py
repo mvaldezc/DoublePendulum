@@ -123,6 +123,21 @@ def T_change_of_coords(state):
     return np.concatenate((x, th1, th2m, xdot, th1dot, th2dot), axis=1)
     #return np.concatenate((sin_th1_mujoco, sin_th2_mujoco, th2, cos_th1_mujoco, cos_th2_mujoco, th2dot), axis=1)
 
+## rollout dynamics to obtain an N-length nominal trajectories of states and control inputs
+    # T is the trajectory length in timsteps
+def rollout_dynamics(T, init_state):
+    xs_nom = np.zeros((T+1, 6))
+    xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
+    # apply a random uk to the dynamical system in open loop
+    us_nom = np.zeros((T, 1))
+    # loop through T the number of timesteps
+    for t in range(T):
+        curr_state = xs_nom[t, :].reshape(1,6)
+        curr_action = us_nom[t, :].reshape(1,1)
+        xs_nom[t+1, :] = dynamics_analytic(curr_state, curr_action)
+
+    return xs_nom, us_nom
+
 def linearize_pytorch(state, control):
     """
         Linearizes cartpole dynamics around linearization point (state, control). Uses autograd of analytic dynamics
