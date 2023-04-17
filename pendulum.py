@@ -1,7 +1,5 @@
 import numpy as np
 import torch
-import autograd.numpy as np
-from autograd import grad, jacobian
 
 def dynamics_analytic(state, action):
     """
