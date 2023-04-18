@@ -128,14 +128,14 @@ def T_change_of_coords(state):
 
 ## rollout dynamics to obtain an N-length nominal trajectories of states and control inputs
     # T is the trajectory length in timsteps
-def rollout_dynamics(T, init_state):
-    xs_nom = torch.zeros((T+1, 6))
+def rollout_dynamics(N, init_state):
+    xs_nom = torch.zeros((N, 6))
     xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
     # apply a random uk to the dynamical system in open loop
     # us_nom = torch.zeros((T, 1))
-    us_nom = torch.randn((T, 1))
+    us_nom = torch.randn((N-1, 1))
     # loop through T the number of timesteps
-    for t in range(T):
+    for t in range(N-1):
         curr_state = xs_nom[t, :].reshape(1,6)
         curr_action = us_nom[t, :].reshape(1,1)
         xs_nom[t+1, :] = dynamics_analytic(curr_state, curr_action)
