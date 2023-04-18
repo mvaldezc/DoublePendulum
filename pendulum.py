@@ -17,6 +17,7 @@ def dynamics_analytic(state, action):
 
     # Physical properties
 
+    #dt = 0.024
     dt = 0.05
 
     damp = 0.05
@@ -25,8 +26,9 @@ def dynamics_analytic(state, action):
     mp1 = 4.19873858
     mp2 = 4.19873858
 
-    L1 = 0.92 # got by solving from M matrix given by mujoco (makes no sense lol but makes M matrix the same thing as mujoco)
-    L2 = 0.92
+    #L1 = 0.92 # got by solving from M matrix given by mujoco (makes no sense lol but makes M matrix the same thing as mujoco)
+    L1 = 0.6
+    L2 = 0.6
 
     l1 = 0.3
     l2 = 0.3
@@ -44,28 +46,34 @@ def dynamics_analytic(state, action):
     th2dot = state[:,5]
 
     # Equations of motion
-    
-    M = torch.tensor([[mc+mp1+mp2, (mp1*l1+mp2*L1)*torch.cos(th1), mp2*l2*torch.cos(th2)],
-                  [(mp1*l1+mp2*L1)*torch.cos(th1), mp1*l1**2 + mp2*L1**2 + I1, mp2*L1*l2*torch.cos(th1-th2)],
-                  [mp2*l2*torch.cos(th2), mp2*L1*l2*torch.cos(th1-th2), mp2*l2**2 + I2]], dtype=torch.float64).reshape(B, 3, 3)
 
-    C = torch.tensor([[0, -(mp1*l1+mp2*L1)*torch.sin(th1)*th1dot, -mp2*l2*torch.sin(th2)*th2dot],
-                  [0, 0, mp2*L1*l2*torch.sin(th1-th2)*th2dot],
-                  [0, -mp2*L1*l2*torch.sin(th1-th2)*th1dot, 0]], dtype=torch.float64).reshape(B, 3, 3)
-    
-    G = torch.tensor([[0], [-(mp1*l1+mp2*L1)*g*torch.sin(th1)], [-mp2*g*l2*torch.sin(th2)]], dtype=torch.float64).reshape(B, 3, 1)
-    
-    D = torch.tensor([[damp * xdot], [damp * th1dot], [damp * th2dot]], dtype=torch.float64).reshape(B, 3, 1)
+    M = torch.tensor([[mc+mp1+mp2, (mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2), mp2*l2*torch.cos(th1+th2)],
+                      [(mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2), mp1*l1**2 + mp2*(L1**2 + 2*L1*l2*torch.cos(th2) + l2**2) + I1 + I2, mp2*l2*(l2+L1*torch.cos(th2)) + I2],
+                      [mp2*l2*torch.cos(th1+th2), mp2*l2*(l2+L1*torch.cos(th2)) + I2, mp2*l2**2 + I2]]).reshape(B, 3, 3)
 
-    U = torch.tensor([[action], [0], [0]], dtype=torch.float64).reshape(B, 3, 1)
-    
-    qdot = torch.tensor([xdot, th1dot, th2dot], dtype=torch.float64).reshape(3,1)
+    C = torch.tensor([[0, -(mp1*l1+mp2*L1)*torch.sin(th1)*th1dot-mp2*l2*torch.sin(th1+th2)*th1dot, -mp2*l2*torch.sin(th1+th2)*(2*th1dot+th2dot)],
+                      [0, 0, -mp2*L1*l2*torch.sin(th2)*(2*th1dot+th2dot)],
+                      [0, mp2*L1*l2*torch.sin(th2)*th1dot, 0]]).reshape(B, 3, 3)
 
+    G = torch.tensor([[0], 
+                      [-(mp1*l1+mp2*L1)*g*torch.sin(th1) - mp2*l2*g*torch.sin(th1+th2)],
+                      [-mp2*g*l2*torch.sin(th1+th2)]]).reshape(B, 3, 1)
+
+    D = torch.tensor([[damp * xdot], [damp * th1dot], [damp * th2dot]]).reshape(B, 3, 1)
+
+    U = torch.tensor([[action*500], [0], [0]], dtype=torch.float).reshape(B, 3, 1)
+    
+    qdot = torch.tensor([xdot, th1dot, th2dot]).reshape(B,3,1)
+    
     qdotdot = torch.linalg.inv(M)@(U - C@qdot - G - D)
-
-    #print("analytical", M.reshape(3,3))
-    #print("analytical", (C@qdot + G + D).reshape(1,3))
     
+    #print("analytical M ", M.reshape(3,3))
+    #print("analytical C ", (C@qdot + G).reshape(1, 3))
+    #print("analytical pos ", torch.tensor([x, th1, th2]).reshape(3,))
+    #print("analytical vel ", torch.tensor([xdot, th1dot, th2dot]).reshape(3,))
+    #print("analytical acc ", qdotdot.reshape(3,))
+    #print("analytical D ", (-D).reshape(1, 3))
+
     # Compute next state
 
     xdd = qdotdot[:,0]
@@ -81,6 +89,7 @@ def dynamics_analytic(state, action):
     next_th2 = th2 + next_th2dot*dt
 
     # Wrap angles
+
     next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
     next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
 
@@ -102,7 +111,7 @@ def change_of_coords(state):
     th1 = np.arctan2(sin_th1_mujoco, cos_th1_mujoco)
     th2 = np.arctan2(sin_th2_mujoco, cos_th2_mujoco)
 
-    return torch.tensor([x, th1, th2, xdot, th1dot, th2dot]) 
+    return torch.tensor([x, th1, th2, xdot, th1dot, th2dot])
 
 def T_change_of_coords(state): 
     x = state[:,0].reshape(-1,1)
