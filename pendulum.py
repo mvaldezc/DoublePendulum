@@ -17,7 +17,6 @@ def dynamics_analytic(state, action):
 
     # Physical properties
 
-    #dt = 0.024
     dt = 0.05
 
     damp = 0.05
@@ -26,7 +25,6 @@ def dynamics_analytic(state, action):
     mp1 = 4.19873858
     mp2 = 4.19873858
 
-    #L1 = 0.92 # got by solving from M matrix given by mujoco (makes no sense lol but makes M matrix the same thing as mujoco)
     L1 = 0.6
     L2 = 0.6
 
