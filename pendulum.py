@@ -65,6 +65,7 @@ def dynamics_analytic(state, action):
     
     qdotdot = torch.linalg.inv(M)@(U - C@qdot - G - D)
     
+    # print("analytical M ", torch.inverse(M.reshape(3,3)))
     #print("analytical M ", M.reshape(3,3))
     #print("analytical C ", (C@qdot + G).reshape(1, 3))
     #print("analytical pos ", torch.tensor([x, th1, th2]).reshape(3,))
@@ -94,7 +95,6 @@ def dynamics_analytic(state, action):
     next_state = torch.cat((next_x, next_th1, next_th2, next_xdot, next_th1dot, next_th2dot), 1)
 
     return next_state
-
 
 def change_of_coords(state): 
     x = state[0]
@@ -161,3 +161,85 @@ def linearize_pytorch(state, control):
     B = J[1].reshape((6, 1))
 
     return A, B
+
+def linearize_dynamics(state, control):
+    """
+        Linearizes cartpole dynamics around linearization point (state, control). Uses autograd of analytic dynamics
+    Args:
+        state: torch.tensor of shape (6,) representing cartpole state
+        control: torch.tensor of shape (1,) representing the force to apply
+
+    Returns:
+        A: torch.tensor of shape (6, 6) representing Jacobian df/dx for dynamics f
+        B: torch.tensor of shape (6, 1) representing Jacobian df/du for dynamics f
+
+    """
+    state = torch.unsqueeze(state, 0).reshape(6,1)
+    control = torch.unsqueeze(control, 0).reshape(1,1)
+    # print(state.shape)
+    
+    # Physical properties
+
+    dt = 0.05
+
+    damp = 0.05
+    g = 9.81
+    mc = 10.47197551
+    mp1 = 4.19873858
+    mp2 = 4.19873858
+
+    L1 = 0.6
+    L2 = 0.6
+
+    l1 = 0.3
+    l2 = 0.3
+
+    I1 = 0.15497067
+    I2 = 0.15497067
+
+    # Extract state
+
+    x = state[0,:]
+    th1 = state[1,:]
+    th2 = state[2,:]
+    xdot = state[3,:]
+    th1dot = state[4,:]
+    th2dot = state[5,:]
+
+    # Equations of motion
+
+    M = torch.tensor([[mc+mp1+mp2, (mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2), mp2*l2*torch.cos(th1+th2)],
+                      [(mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2), mp1*l1**2 + mp2*(L1**2 + 2*L1*l2*torch.cos(th2) + l2**2) + I1 + I2, mp2*l2*(l2+L1*torch.cos(th2)) + I2],
+                      [mp2*l2*torch.cos(th1+th2), mp2*l2*(l2+L1*torch.cos(th2)) + I2, mp2*l2**2 + I2]]).reshape(3, 3)
+
+    C = torch.tensor([[0, -(mp1*l1+mp2*L1)*torch.sin(th1)*th1dot-mp2*l2*torch.sin(th1+th2)*th1dot, -mp2*l2*torch.sin(th1+th2)*(2*th1dot+th2dot)],
+                      [0, 0, -mp2*L1*l2*torch.sin(th2)*(2*th1dot+th2dot)],
+                      [0, mp2*L1*l2*torch.sin(th2)*th1dot, 0]]).reshape(3, 3)
+
+    G = torch.tensor([[0], 
+                      [-(mp1*l1+mp2*L1)*g*torch.sin(th1) - mp2*l2*g*torch.sin(th1+th2)],
+                      [-mp2*g*l2*torch.sin(th1+th2)]]).reshape(3, 1)
+
+    D = torch.tensor([[damp * xdot], [damp * th1dot], [damp * th2dot]]).reshape(3, 1)
+
+    H = torch.tensor([[1*500], [0], [0]], dtype=torch.float).reshape(3, 1)
+
+    # print(f'{torch.linalg.inv(M)=}')
+    # print(f'{C=}')
+    a22 = -torch.linalg.inv(M) @ C
+    # print(f'{a22=}')
+    A = torch.zeros((6,6))
+    A[:3,3:] = torch.eye(3)
+    A[3:,3:] = a22
+
+    b2 = torch.linalg.inv(M) @ H
+    # print(f'{b2=}')
+    B = torch.cat((torch.zeros((3,1)), b2), dim=0)
+
+    A = torch.eye(6) + dt * A
+    B = dt * B
+
+    return A, B
+
+
+
