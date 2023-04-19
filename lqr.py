@@ -1,6 +1,32 @@
 import torch
 from pendulum import *
 
+    # perform rollouts to obtain the nominal state and control trajectories
+def obtain_nominal_trajectory(current_state, N, Tf):
+    xs_nom, us_nom = rollout_dynamics(N, current_state)
+
+    # plot the nominal trajectory over time
+    # t_vec = np.linspace(0, Tf, N)
+    # fig, axs = plt.subplots(3,1,sharex=True)
+    # lin0, = axs[0].plot(t_vec, xs_nom[:,0], lw=2) 
+    # lin1, = axs[1].plot(t_vec, xs_nom[:,1], lw=2)
+    # lin2, = axs[2].plot(t_vec, xs_nom[:,2], lw=2)
+    # axs[0].set_title('Nominal trajectories over time')
+    # axs[0].set_ylabel("X position")
+    # axs[1].set_ylabel("Theta 1 (rad)")
+    # axs[2].set_ylabel("Theta 2 (rad)")
+    # axs[-1].set_xlabel("time steps")  
+
+    # # plot the nominal control trajectory
+    # plt.figure()
+    # t_vec = np.linspace(0, Tf, N-1)
+    # lin0, = plt.plot(t_vec, us_nom[:,0], lw=1)
+    # plt.title('Nominal control inputs over time')
+    # plt.ylabel("control inputs (N)")
+    # plt.xlabel("time (s)")
+
+    return xs_nom, us_nom
+
 # define the running cost function
 def running_cost_func(curr_x, curr_u, xstar, Q, R):
     running_cost = 0.5*(curr_x - xstar).T @ Q @ (curr_x - xstar) + 0.5 * curr_u * R * curr_u
@@ -142,4 +168,61 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom):
         xs[t+1, :] = next_x
 
     return us, xs
+
+## perform iLQR
+def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu_delta_0, mu_delta, mu_min, Q, R):
+
+    # perform the rollout to obtain the nominal trajectory
+    xs_nom, us_nom = obtain_nominal_trajectory(current_state, N, Tf)
+
+    # run loop until convergence is reached
+    i = 0
+    xs = xs_nom
+    us = us_nom
+
+    # matrix to test positive definiteness
+    is_pos_def = False
+
+    while i < num_iterations:
+
+        while not is_pos_def:
+            # perform the backwards pass
+            ks, Ks, quu = backward_pass(xs, us, xstar, Q, R, mu)
+            
+            if quu <= 0: # not positive definite, increase mu
+                is_pos_def = False
+                mu_delta = max(mu_delta_0, mu_delta*mu_delta_0)
+                mu = torch.max(mu_min, mu*mu_delta)
+            else:   # is positive definite, decrease mu
+                is_pos_def = True
+                mu_delta = min(1/mu_delta_0, mu_delta/mu_delta_0)
+                if mu*mu_delta > mu_min:
+                    mu = mu*mu_delta
+                else:
+                    mu = 0
+
+        # perform the forward pass
+        us, xs = forward_pass(ks, Ks, N, xs, us)
+
+        i += 1
+
+    # plot the optimal state trajectory over time
+    t_vec_x = np.linspace(0, Tf, N)
+    fig, axs = plt.subplots(3,1,sharex=True)
+    lin0, = axs[0].plot(t_vec_x, xs[:,0], lw=2) 
+    lin1, = axs[1].plot(t_vec_x, xs[:,1], lw=2)
+    lin2, = axs[2].plot(t_vec_x, xs[:,2], lw=2)
+    axs[0].set_title('Optimal state trajectories over time')
+    axs[0].set_ylabel("X position")
+    axs[1].set_ylabel("Theta 1 (rad)")
+    axs[2].set_ylabel("Theta 2 (rad)")
+    axs[-1].set_xlabel("time steps")  
+
+    # plot the optimal control trajectory
+    plt.figure()
+    t_vec_u = np.linspace(0,Tf,N-1)
+    lin0, = plt.plot(t_vec_u, us[:,0], lw=1)
+    plt.title('Optimal control inputs over time')
+    plt.ylabel("control inputs (N)")
+    plt.xlabel("time (s)")
 
