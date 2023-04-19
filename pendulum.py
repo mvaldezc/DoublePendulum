@@ -132,7 +132,6 @@ def rollout_dynamics(N, init_state):
     xs_nom = torch.zeros((N, 6))
     xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
     # apply a random uk to the dynamical system in open loop
-    # us_nom = torch.zeros((T, 1))
     us_nom = torch.randn((N-1, 1))
     # loop through T the number of timesteps
     for t in range(N-1):
@@ -176,7 +175,6 @@ def linearize_dynamics(state, control):
     """
     state = torch.unsqueeze(state, 0).reshape(6,1)
     control = torch.unsqueeze(control, 0).reshape(1,1)
-    # print(state.shape)
     
     # Physical properties
 
@@ -215,12 +213,6 @@ def linearize_dynamics(state, control):
     C = torch.tensor([[0, -(mp1*l1+mp2*L1)*torch.sin(th1)*th1dot-mp2*l2*torch.sin(th1+th2)*th1dot, -mp2*l2*torch.sin(th1+th2)*(2*th1dot+th2dot)],
                       [0, 0, -mp2*L1*l2*torch.sin(th2)*(2*th1dot+th2dot)],
                       [0, mp2*L1*l2*torch.sin(th2)*th1dot, 0]]).reshape(3, 3)
-
-    G = torch.tensor([[0], 
-                      [-(mp1*l1+mp2*L1)*g*torch.sin(th1) - mp2*l2*g*torch.sin(th1+th2)],
-                      [-mp2*g*l2*torch.sin(th1+th2)]]).reshape(3, 1)
-
-    D = torch.tensor([[damp * xdot], [damp * th1dot], [damp * th2dot]]).reshape(3, 1)
 
     H = torch.tensor([[1*500], [0], [0]], dtype=torch.float).reshape(3, 1)
 
