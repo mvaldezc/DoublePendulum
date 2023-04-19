@@ -234,4 +234,53 @@ def linearize_dynamics(state, control):
     return A, B
 
 
+def set_state(env, pos, vel, acc):
+    '''
+    Set the state of the cartpole
+    
+    Args:    
+        env: gym environment
+        pos: list of length 3 representing the position of the cartpole
+        vel: list of length 3 representing the velocity of the cartpole
+        acc: list of length 3 representing the acceleration of the cartpole
 
+    Returns:
+        state: list of length 12 representing the state of the cartpole
+    '''
+    env.reset()
+    env.data.qpos = pos
+    env.data.qvel = vel
+    env.data.qacc = acc
+
+    return np.concatenate(
+        [
+            env.data.qpos[:1],  # cart x pos
+            np.sin(env.data.qpos[1:]),  # link angles
+            np.cos(env.data.qpos[1:]),
+            np.clip(env.data.qvel, -10, 10),
+            np.clip(env.data.qfrc_constraint, -10, 10),
+        ]
+    ).ravel()
+
+
+def get_state(env):
+    '''
+    Get the state of the cartpole
+
+    Args:
+        env: gym environment
+
+    Returns:
+        state: list of length 12 representing the state of the cartpole
+    
+    '''
+
+    return np.concatenate(
+        [
+            env.data.qpos[:1],  # cart x pos
+            np.sin(env.data.qpos[1:]),  # link angles
+            np.cos(env.data.qpos[1:]),
+            np.clip(env.data.qvel, -10, 10),
+            np.clip(env.data.qfrc_constraint, -10, 10),
+        ]
+    ).ravel()
