@@ -285,3 +285,140 @@ def get_state(env):
             np.clip(env.data.qfrc_constraint, -10, 10),
         ]
     ).ravel()
+
+
+def batched_dynamics(state, action):
+    """
+        Computes x_t+1 = f(x_t, u_t) using analytic model of dynamics in Pytorch
+        Should support batching
+    Args:
+        state: torch.tensor of shape (B, 6) representing the double pendulum state
+        control: torch.tensor of shape (B, 1) representing the force to apply
+
+    Returns:
+        next_state: torch.tensor of shape (B, 6) representing the next double pendulum state
+
+    """
+    B = state.shape[0]
+
+    # Physical properties
+
+    dt = 0.05
+
+    damp = 0.05
+    g = 9.81
+    mc = 10.47197551
+    mp1 = 4.19873858
+    mp2 = 4.19873858
+
+    L1 = 0.6
+    L2 = 0.6
+
+    l1 = 0.3
+    l2 = 0.3
+
+    I1 = 0.15497067
+    I2 = 0.15497067
+
+    # Extract state
+
+    x = state[:, 0]
+    th1 = state[:, 1]
+    th2 = state[:, 2]
+    xdot = state[:, 3]
+    th1dot = state[:, 4]
+    th2dot = state[:, 5]
+
+    # Equations of motion
+    M = torch.zeros((B, 3, 3), dtype=torch.float)
+
+    M[:, 0, 0] = mc + mp1 + mp2
+    M[:, 0, 1] = (mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2)
+    M[:, 0, 2] = mp2*l2*torch.cos(th1+th2)
+    M[:,1, 0] = (mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2)
+    M[:,1, 1] = mp1*l1**2 + mp2*(L1**2 + 2*L1*l2*torch.cos(th2) + l2**2) + I1 + I2
+    M[:,1, 2] = mp2*l2*(l2+L1*torch.cos(th2)) + I2
+    M[:,2, 0] = mp2*l2*torch.cos(th1+th2)
+    M[:,2, 1] = mp2*l2*(l2+L1*torch.cos(th2)) + I2
+    M[:,2, 2] = mp2*l2**2 + I2
+
+
+    #M = torch.tensor([[mc+mp1+mp2, (mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2), mp2*l2*torch.cos(th1+th2)],
+    #                  [(mp1*l1+mp2*L1)*torch.cos(th1)+mp2*l2*torch.cos(th1+th2), mp1*l1**2 + mp2*(L1 **2 + 2*L1*l2*torch.cos(th2) + l2**2) + I1 + I2, mp2*l2*(l2+L1*torch.cos(th2)) + I2],
+    #                  [mp2*l2*torch.cos(th1+th2), mp2*l2*(l2+L1*torch.cos(th2)) + I2, mp2*l2**2 + I2]]).reshape(B, 3, 3)
+    
+    C = torch.zeros((B, 3, 3), dtype=torch.float)
+    C[:, 0, 1] = -(mp1*l1+mp2*L1)*torch.sin(th1)*th1dot-mp2*l2*torch.sin(th1+th2)*th1dot
+    C[:, 0, 2] = -mp2*l2*torch.sin(th1+th2)*(2*th1dot+th2dot)
+    C[:, 1, 2] = -mp2*L1*l2*torch.sin(th2)*(2*th1dot+th2dot)
+    C[:, 2, 1] = mp2*L1*l2*torch.sin(th2)*th1dot
+
+    #C = torch.tensor([[0, -(mp1*l1+mp2*L1)*torch.sin(th1)*th1dot-mp2*l2*torch.sin(th1+th2)*th1dot, -mp2*l2*torch.sin(th1+th2)*(2*th1dot+th2dot)],
+    #                  [0, 0, -mp2*L1*l2*torch.sin(th2)*(2*th1dot+th2dot)],
+    #                  [0, mp2*L1*l2*torch.sin(th2)*th1dot, 0]]).reshape(B, 3, 3)
+
+    G = torch.zeros((B, 3, 1), dtype=torch.float)
+    G[:, 1, 0] = -(mp1*l1+mp2*L1)*g*torch.sin(th1) - mp2*l2*g*torch.sin(th1+th2)
+    G[:, 2, 0] = -mp2*g*l2*torch.sin(th1+th2)
+
+    #G = torch.tensor([[0],
+    #                  [-(mp1*l1+mp2*L1)*g*torch.sin(th1) - mp2*l2*g*torch.sin(th1+th2)],
+    #                  [-mp2*g*l2*torch.sin(th1+th2)]]).reshape(B, 3, 1)
+
+    D = torch.zeros((B, 3, 1), dtype=torch.float)
+    D[:, 0, 0] = damp * xdot
+    D[:, 1, 0] = damp * th1dot
+    D[:, 2, 0] = damp * th2dot
+
+    #D = torch.tensor([[damp * xdot], [damp * th1dot],
+    #                 [damp * th2dot]]).reshape(B, 3, 1)
+
+    U = torch.zeros((B, 3, 1), dtype=torch.float)
+    U[:, 0] = action*500
+
+    #U = torch.tensor([[action*500], [0], [0]],
+    #                 dtype=torch.float).reshape(B, 3, 1)
+
+    qdot = torch.zeros((B, 3, 1), dtype=torch.float)
+    #print(xdot.shape)
+    qdot[:, 0, 0] = xdot
+    qdot[:, 1, 0] = th1dot
+    qdot[:, 2, 0] = th2dot
+
+
+    #qdot = torch.tensor([xdot, th1dot, th2dot]).reshape(B, 3, 1)
+
+    qdotdot = torch.linalg.inv(M)@(U - C@qdot - G - D)
+
+    # print("analytical M ", torch.inverse(M.reshape(3,3)))
+    #print("analytical M ", M.reshape(3,3))
+    #print("analytical C ", (C@qdot + G).reshape(1, 3))
+    #print("analytical pos ", torch.tensor([x, th1, th2]).reshape(3,))
+    #print("analytical vel ", torch.tensor([xdot, th1dot, th2dot]).reshape(3,))
+    #print("analytical acc ", qdotdot.reshape(3,))
+    #print("analytical D ", (-D).reshape(1, 3))
+
+    # Compute next state
+
+    xdd = qdotdot[:, 0]
+    th1dd = qdotdot[:, 1]
+    th2dd = qdotdot[:, 2]
+
+    next_xdot = xdot.reshape(B,1) + xdd*dt
+    next_th1dot = th1dot.reshape(B,1) + th1dd*dt
+    next_th2dot = th2dot.reshape(B, 1) + th2dd*dt
+
+
+    next_x = x.reshape(B,1) + next_xdot*dt
+    next_th1 = th1.reshape(B,1) + next_th1dot*dt
+    next_th2 = th2.reshape(B,1) + next_th2dot*dt
+
+    # Wrap angles
+
+    next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
+    next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
+
+    next_state = torch.cat((next_x, next_th1, next_th2, next_xdot, next_th1dot, next_th2dot), 1)
+
+    return next_state
+
