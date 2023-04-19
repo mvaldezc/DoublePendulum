@@ -161,7 +161,8 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom):
         # print(delta_u)
         # print(curr_u)
         # obtain the next state from the dynamics function
-        next_x = dynamics_analytic(curr_x.reshape(1,6), curr_u) # (1,6)
+        #next_x = dynamics_analytic(curr_x.reshape(1,6), curr_u) # (1,6)
+        next_x = dynamics_rk4(curr_x.reshape(1,6), curr_u) # (1,6)
 
         # save the current u and the next x to the stored vectors of us and xs
         us[t, :] = curr_u
@@ -192,7 +193,7 @@ def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_del
             if quu <= 0: # not positive definite, increase mu
                 is_pos_def = False
                 mu_delta = max(mu_delta_0, mu_delta*mu_delta_0)
-                mu = torch.max(mu_min, mu*mu_delta)
+                mu = max(mu_min, mu*mu_delta)
             else:   # is positive definite, decrease mu
                 is_pos_def = True
                 mu_delta = min(1/mu_delta_0, mu_delta/mu_delta_0)

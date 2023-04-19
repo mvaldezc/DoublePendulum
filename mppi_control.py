@@ -1,6 +1,6 @@
 import torch
 from torch.distributions.multivariate_normal import MultivariateNormal
-from pendulum import batched_dynamics
+from pendulum import batched_dynamics, dynamics_rk4
 
 
 def get_cartpole_mppi_hyperparams():
@@ -97,7 +97,7 @@ class MPPIController(object):
         perturbations = self.noise_dist.sample((self.K, self.T))    # shape (K, T, action_size)
         perturbed_actions = self.U + perturbations      # shape (K, T, action_size)
         trajectory = self._rollout_dynamics(state, actions=perturbed_actions)
-        print(trajectory)
+        
         trajectory_cost = self._compute_trajectory_cost(trajectory, perturbations)
         self._nominal_trajectory_update(trajectory_cost, perturbations)
         # select optimal action
@@ -186,6 +186,7 @@ class MPPIController(object):
         :param action: torch tensor of size (..., action_size)
         :return: next_state: torch tensor of size (..., state_size)
         """
-        next_state = batched_dynamics(state.cpu().detach(), action.cpu().detach())
+        next_state = batched_dynamics(self.env, state.cpu().detach(), action.cpu().detach())
+        #next_state = dynamics_rk4(state.cpu().detach(), action.cpu().detach())
         next_state = torch.tensor(next_state, dtype=state.dtype)
         return next_state

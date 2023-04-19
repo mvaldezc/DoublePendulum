@@ -1,3 +1,4 @@
 .DS_Store
 __pycache__/
 cartpole_example.png
+MUJOCO_LOG.TXT
