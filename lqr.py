@@ -41,9 +41,7 @@ def compute_qxx_quu(lxx, A, Vxx, luu, B, lux, mu):
 
 # set up the backward pass function (recursively apply the belman equation)
 # proceed backwards in time through the nominal trajectory
-def backward_pass(xs_nom, us_nom, xstar, Q, R):
-    # set the value of mu
-    mu = 10e-6
+def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta):
 
     # get the number of timesteos
     N = xs_nom.shape[0]
@@ -86,14 +84,6 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R):
 
         # compute the second derivatives Qxx, Quu, Qux (t-1)
         qxx, quu, qux = compute_qxx_quu(lxx, A, Vxx, luu, B, lux, mu)
-
-        # check if quu is invertible then increase regularization value
-        while torch.linalg.det(quu) < 0.0001:
-            mu = mu * 2
-            qxx, quu, qux = compute_qxx_quu(lxx, A, Vxx, luu, B, lux, mu)
-            print(f'{mu=}')
-
-        # print(quu)
 
         # compute the gains k and K (t-1)
         k = -torch.linalg.inv(quu) @ qu # (1, 1)
