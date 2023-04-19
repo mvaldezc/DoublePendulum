@@ -130,7 +130,8 @@ def T_change_of_coords(state):
     # T is the trajectory length in timsteps
 def rollout_dynamics(N, init_state):
     xs_nom = torch.zeros((N, 6))
-    xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
+    #xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
+    xs_nom[0, :] = init_state.reshape(6,)
     # apply a random uk to the dynamical system in open loop
     us_nom = torch.randn((N-1, 1))
     # loop through T the number of timesteps

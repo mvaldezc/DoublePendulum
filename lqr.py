@@ -170,7 +170,7 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom):
     return us, xs
 
 ## perform iLQR
-def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu_delta_0, mu_delta, mu_min, Q, R):
+def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_delta, mu_min, Q, R):
 
     # perform the rollout to obtain the nominal trajectory
     xs_nom, us_nom = obtain_nominal_trajectory(current_state, N, Tf)
@@ -207,22 +207,24 @@ def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu_delta_0, mu_delta, 
         i += 1
 
     # plot the optimal state trajectory over time
-    t_vec_x = np.linspace(0, Tf, N)
-    fig, axs = plt.subplots(3,1,sharex=True)
-    lin0, = axs[0].plot(t_vec_x, xs[:,0], lw=2) 
-    lin1, = axs[1].plot(t_vec_x, xs[:,1], lw=2)
-    lin2, = axs[2].plot(t_vec_x, xs[:,2], lw=2)
-    axs[0].set_title('Optimal state trajectories over time')
-    axs[0].set_ylabel("X position")
-    axs[1].set_ylabel("Theta 1 (rad)")
-    axs[2].set_ylabel("Theta 2 (rad)")
-    axs[-1].set_xlabel("time steps")  
+    # t_vec_x = np.linspace(0, Tf, N)
+    # fig, axs = plt.subplots(3,1,sharex=True)
+    # lin0, = axs[0].plot(t_vec_x, xs[:,0], lw=2) 
+    # lin1, = axs[1].plot(t_vec_x, xs[:,1], lw=2)
+    # lin2, = axs[2].plot(t_vec_x, xs[:,2], lw=2)
+    # axs[0].set_title('Optimal state trajectories over time')
+    # axs[0].set_ylabel("X position")
+    # axs[1].set_ylabel("Theta 1 (rad)")
+    # axs[2].set_ylabel("Theta 2 (rad)")
+    # axs[-1].set_xlabel("time steps")  
 
-    # plot the optimal control trajectory
-    plt.figure()
-    t_vec_u = np.linspace(0,Tf,N-1)
-    lin0, = plt.plot(t_vec_u, us[:,0], lw=1)
-    plt.title('Optimal control inputs over time')
-    plt.ylabel("control inputs (N)")
-    plt.xlabel("time (s)")
+    # # plot the optimal control trajectory
+    # plt.figure()
+    # t_vec_u = np.linspace(0,Tf,N-1)
+    # lin0, = plt.plot(t_vec_u, us[:,0], lw=1)
+    # plt.title('Optimal control inputs over time')
+    # plt.ylabel("control inputs (N)")
+    # plt.xlabel("time (s)")
+
+    return us, xs
 
