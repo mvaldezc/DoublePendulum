@@ -41,7 +41,7 @@ def compute_qxx_quu(lxx, A, Vxx, luu, B, lux, mu):
 
 # set up the backward pass function (recursively apply the belman equation)
 # proceed backwards in time through the nominal trajectory
-def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta):
+def backward_pass(xs_nom, us_nom, xstar, Q, R, mu):
 
     # get the number of timesteos
     N = xs_nom.shape[0]
@@ -101,7 +101,7 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta):
         Vxs[t-1, :] = Vx.reshape(1,6)
         Vxxs[t-1, :] = Vxx
 
-    return ks, Ks
+    return ks, Ks, quu
 
     # set up the forward pass function to obtain the new xs and us
 def forward_pass(ks, Ks, N, xs_nom, us_nom):
