@@ -30,7 +30,7 @@ def obtain_nominal_trajectory(current_state, N, Tf):
 # define the running cost function
 def running_cost_func(curr_x, curr_u, xstar, Q, R):
     # running_cost = 0.5*(curr_x - xstar).T @ Q @ (curr_x - xstar) + 0.5 * curr_u * R * curr_u
-    running_cost = 0.5*(curr_x).T @ Q @ (curr_x) + 0.5 * curr_u * R * curr_u
+    running_cost = 0.5*(curr_x - xstar).T @ Q @ (curr_x - xstar) + 0.5 * curr_u.T @ R @ curr_u
     return running_cost
 
 # define the terminal cost function
@@ -73,7 +73,7 @@ def compute_qxx_quu(lxx, A, Vxx, luu, B, lux, mu):
 
 # set up the backward pass function (recursively apply the belman equation)
 # proceed backwards in time through the nominal trajectory
-def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta_0, mu_min, mu_delta):
+def backward_pass(xs_nom, us_nom, xstar, Q, R, Qf, mu, mu_delta_0, mu_min, mu_delta):
 
     # get the number of timesteos
     N = xs_nom.shape[0]
@@ -81,6 +81,10 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta_0, mu_min, mu_delta)
     # create a tensor for storing all Vx (jacobian of value function) and Vxx (hessian of the value function) values
     Vxs = torch.zeros((N, 6))
     Vxxs = torch.zeros((N, 6, 6))
+
+    # Set Vxs(N) = Qf * (xs(N) - xstar) and Vxxs(N) = Qf
+    Vxs[N-1, :] = (Qf @ (xs_nom[N-1, :] - xstar).reshape(6,1)).squeeze(-1)
+    Vxxs[N-1, :, :] = Qf
 
     # create a tensor for storing all the gains k and K for the entire trajectory
     ks = torch.ones(N-1, 1, 1) # TODO: initialize to zero?
@@ -100,20 +104,15 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta_0, mu_min, mu_delta)
 
         # linearize about the current point in the nominal trajectory (t-1)
         A, B = linearize_dynamics(curr_x.reshape(6,), curr_u.reshape(1,))  
-        # print(f'{A=}, {B=}')
 
         # compute the first and second derivative of the lienarized dynamics (lx, lu, etc) (t-1)
-        # print(f'{curr_x.shape=}')
-        # print(f'{xstar=}')
-        # print(f'{Q=}')
-        # lx = ((curr_x-xstar.reshape(6,1)).T @ Q.T).reshape(6,1)
-        lx = ((curr_x).T @ Q.T).reshape(6,1)
+        lx = ((curr_x - xstar.reshape(6,1)).T @ Q.T).reshape(6,1)
         lu = ((curr_u).T @ R.T).reshape(1,1)
         lxx = Q
         luu = R
         lux = 0
 
-        # obtain the first and second derivatives of the value function (Vx') for t-1
+        # obtain the first and second derivatives of the value function (Vx') for t
         Vx = Vxs[t, :].reshape(6,1)
         Vxx = Vxxs[t, :, :].squeeze(0) # (6,6)
 
@@ -146,7 +145,7 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta_0, mu_min, mu_delta)
         Vxx = qxx + K.T @ quu @ K + K.T @ qux + qux.T @ K # (6,6)
 
         # update the stored Vxs and Vxxs with the new values for Vx and Vxx
-        Vxs[t-1, :] = Vx.reshape(1,6)
+        Vxs[t-1, :] = Vx.squeeze(-1)
         Vxxs[t-1, :] = Vxx
 
     return ks, Ks, qus, quus, restart_bck_pass, mu, mu_delta
@@ -162,7 +161,6 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom, alpha):
 
     # iterate through all the timepoints
     for t in range(N-1): # t goes from 0 to N-2
-        # print(t)
         # get the nominal u, nominal x, and current x for the given timstep
         curr_nom_u = us_nom[t, :].reshape(1,1)
         curr_nom_x = xs_nom[t, :].reshape(6,1)
@@ -170,9 +168,7 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom, alpha):
 
         # get the current gains for the given timestep
         k = ks[t, :].reshape(1,1)
-        # print(k)
         K = Ks[t, :].reshape(6,1)
-        # print(K)
 
         # calculate delta x from the current x and the nominal x
         delta_x = curr_x - curr_nom_x 
@@ -180,8 +176,6 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom, alpha):
         delta_u = alpha*k + torch.dot(K.squeeze(-1), delta_x.squeeze(-1))
         # calculate the new u from delta u
         curr_u = curr_nom_u + delta_u # (1,1)
-        # print(delta_u)
-        # print(curr_u)
         # obtain the next state from the dynamics function
         next_x = dynamics_rk4(curr_x.reshape(1,6), curr_u) # (1,6)
 
@@ -202,21 +196,21 @@ def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_del
     xs = xs_nom
     us = us_nom
 
-    # matrix to test positive definiteness
-    is_pos_def = False
     mu = mu_min
     mu_delta = mu_delta_0
     cost_diff = 2*eps
     # while i < num_iterations:
     # test for convergence: if the absolute value of the difference in costs is greater than a threshold, 
     # move onto the next iteration of mpc because the control input is good enough
-    while cost_diff > eps:
-        print(f'{i=}')
+    #while cost_diff > eps:
+    while i < num_iterations:
+        #print(f'{i=}')
         # perform the backwards pass
         restart_bck_pass = True
         while restart_bck_pass == True:
-            print('restarting bck pass')
-            ks, Ks, qus, quus, restart_bck_pass, mu, mu_delta = backward_pass(xs, us, xstar, Q, R, mu, mu_delta_0, mu_min, mu_delta)
+            #print('restarting bck pass')
+            ks, Ks, qus, quus, restart_bck_pass, mu, mu_delta = backward_pass(
+                xs, us, xstar, Q, R, Qf, mu, mu_delta_0, mu_min, mu_delta)
         # after the backward pass ends, decrease mu
         mu_delta = min(1/mu_delta_0, mu_delta/mu_delta_0)
         if mu*mu_delta > mu_min:
@@ -228,41 +222,41 @@ def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_del
         alpha = 1.0
         J_prev = total_cost_func(xs, us, xstar, Q, R, Qf)
         while cost_reduction_sufficient == False:
-            print('restarting fwd pass')
+            #print('restarting fwd pass')
             # perform the forward pass
             us_test, xs_test = forward_pass(ks, Ks, N, xs, us, alpha)
 
             # calculate the cost for the current state
-            print(f'{J_prev=}')
+            #print(f'{J_prev=}')
             J_curr = (total_cost_func(xs_test, us_test, xstar, Q, R, Qf))
-            print(f'{J_curr=}')
+            #print(f'{J_curr=}')
 
             # calculate the difference in cost for the previous and current state
             delta_J = J_prev - J_curr
-            print(f'{delta_J=}')
+            #print(f'{delta_J=}')
 
             # calculate the expected total cost reduction
             expected_delta_J = -total_cost_reduction(alpha, ks, qus, quus)
-            print(f'{expected_delta_J=}')
+            #print(f'{expected_delta_J=}')
 
             # caclulate the delta_J threshold
             z = delta_J/expected_delta_J
-            print(f'{z=}')
+            #print(f'{z=}')
 
-            # if z > c:
-            if z >= 0:
+            if z > c:
+            #if z >= 0:
                 cost_reduction_sufficient = True
             # if the cost reduction is not sufficient, reduce alpha
             else:
                 alpha = alpha*gamma
-                print(f'{alpha=}')
+                #rint(f'{alpha=}')
 
                 if alpha < 1e-6:
-                    print('alpha is small')
+                    #print('alpha is small')
                     break
 
             cost_diff = abs(J_prev - J_curr)
-            print(f'{cost_diff=}')
+            #print(f'{cost_diff=}')
 
         us = us_test
         xs = xs_test
