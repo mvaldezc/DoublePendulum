@@ -29,7 +29,8 @@ def obtain_nominal_trajectory(current_state, N, Tf):
 
 # define the running cost function
 def running_cost_func(curr_x, curr_u, xstar, Q, R):
-    running_cost = 0.5*(curr_x - xstar).T @ Q @ (curr_x - xstar) + 0.5 * curr_u * R * curr_u
+    # running_cost = 0.5*(curr_x - xstar).T @ Q @ (curr_x - xstar) + 0.5 * curr_u * R * curr_u
+    running_cost = 0.5*(curr_x).T @ Q @ (curr_x) + 0.5 * curr_u * R * curr_u
     return running_cost
 
 # define the terminal cost function
@@ -52,6 +53,11 @@ def total_cost_func(xs, us, xstar, Q, R, Qf):
     total_cost += term_cost_func(final_x, xstar, Qf)
     return total_cost
 
+def total_cost_reduction(alpha, ks, qus, quus):
+    delta_J = alpha * ks @ qus + (alpha**2)/2 * ks @ quus @ ks
+    delta_J = torch.sum(delta_J, dim=0).squeeze(-1)
+    return delta_J
+
 # compute the first derivatives of q
 def compute_qx_qu(lx, A, Vx, lu, B):
     qx = lx + A.T @ Vx
@@ -67,7 +73,7 @@ def compute_qxx_quu(lxx, A, Vxx, luu, B, lux, mu):
 
 # set up the backward pass function (recursively apply the belman equation)
 # proceed backwards in time through the nominal trajectory
-def backward_pass(xs_nom, us_nom, xstar, Q, R, mu):
+def backward_pass(xs_nom, us_nom, xstar, Q, R, mu, mu_delta_0, mu_min, mu_delta):
 
     # get the number of timesteos
     N = xs_nom.shape[0]
@@ -80,7 +86,12 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu):
     ks = torch.ones(N-1, 1, 1) # TODO: initialize to zero?
     Ks = torch.zeros(N-1, 1, 6) # TODO: check the dimensions of these
 
+    # create a tensor that stores all of the qus and quus
+    qus = torch.zeros(N-1, 1, 1)
+    quus = torch.zeros(N-1, 1, 1)
+
     # for each value in the nominal trajectory
+    restart_bck_pass = False
     for t in reversed(range(1,N,1)): # t goes from N-1 to 1, t-1 goes from N-2 to 0
 
         # get the current state and control from the nominal trajectory (t-1)
@@ -95,7 +106,8 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu):
         # print(f'{curr_x.shape=}')
         # print(f'{xstar=}')
         # print(f'{Q=}')
-        lx = ((curr_x-xstar.reshape(6,1)).T @ Q.T).reshape(6,1)
+        # lx = ((curr_x-xstar.reshape(6,1)).T @ Q.T).reshape(6,1)
+        lx = ((curr_x).T @ Q.T).reshape(6,1)
         lu = ((curr_u).T @ R.T).reshape(1,1)
         lxx = Q
         luu = R
@@ -110,6 +122,16 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu):
 
         # compute the second derivatives Qxx, Quu, Qux (t-1)
         qxx, quu, qux = compute_qxx_quu(lxx, A, Vxx, luu, B, lux, mu)
+
+        # store all of the qus and quus
+        qus[t-1, :, :] = qu
+        quus[t-1, :, :] = quu
+
+        if quu <= 0: # not positive definite, increase mu
+            mu_delta = max(mu_delta_0, mu_delta*mu_delta_0)
+            mu = max(mu_min, mu*mu_delta)
+            restart_bck_pass = True
+            break
 
         # compute the gains k and K (t-1)
         k = -torch.linalg.inv(quu) @ qu # (1, 1)
@@ -127,10 +149,10 @@ def backward_pass(xs_nom, us_nom, xstar, Q, R, mu):
         Vxs[t-1, :] = Vx.reshape(1,6)
         Vxxs[t-1, :] = Vxx
 
-    return ks, Ks, quu
+    return ks, Ks, qus, quus, restart_bck_pass, mu, mu_delta
 
     # set up the forward pass function to obtain the new xs and us
-def forward_pass(ks, Ks, N, xs_nom, us_nom):
+def forward_pass(ks, Ks, N, xs_nom, us_nom, alpha):
     # save a tensor of all the new states and control inputs
     us = torch.zeros((N-1, 1))
     xs = torch.zeros((N, 6))
@@ -155,7 +177,7 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom):
         # calculate delta x from the current x and the nominal x
         delta_x = curr_x - curr_nom_x 
         # calculate delta u using the gains and delta x
-        delta_u = k + torch.dot(K.squeeze(-1), delta_x.squeeze(-1))
+        delta_u = alpha*k + torch.dot(K.squeeze(-1), delta_x.squeeze(-1))
         # calculate the new u from delta u
         curr_u = curr_nom_u + delta_u # (1,1)
         # print(delta_u)
@@ -170,7 +192,7 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom):
     return us, xs
 
 ## perform iLQR
-def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_delta, mu_min, Q, R):
+def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_delta, mu_min, Q, R, Qf, alpha, c, gamma, eps):
 
     # perform the rollout to obtain the nominal trajectory
     xs_nom, us_nom = obtain_nominal_trajectory(current_state, N, Tf)
@@ -182,30 +204,70 @@ def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_del
 
     # matrix to test positive definiteness
     is_pos_def = False
+    mu = mu_min
+    mu_delta = mu_delta_0
+    cost_diff = 2*eps
+    # while i < num_iterations:
+    # test for convergence: if the absolute value of the difference in costs is greater than a threshold, 
+    # move onto the next iteration of mpc because the control input is good enough
+    while cost_diff > eps:
+        print(f'{i=}')
+        # perform the backwards pass
+        restart_bck_pass = True
+        while restart_bck_pass == True:
+            print('restarting bck pass')
+            ks, Ks, qus, quus, restart_bck_pass, mu, mu_delta = backward_pass(xs, us, xstar, Q, R, mu, mu_delta_0, mu_min, mu_delta)
+        # after the backward pass ends, decrease mu
+        mu_delta = min(1/mu_delta_0, mu_delta/mu_delta_0)
+        if mu*mu_delta > mu_min:
+            mu = mu*mu_delta
+        else:
+            mu = 0
 
-    while i < num_iterations:
+        cost_reduction_sufficient = False
+        alpha = 1.0
+        J_prev = total_cost_func(xs, us, xstar, Q, R, Qf)
+        while cost_reduction_sufficient == False:
+            print('restarting fwd pass')
+            # perform the forward pass
+            us_test, xs_test = forward_pass(ks, Ks, N, xs, us, alpha)
 
-        while not is_pos_def:
-            # perform the backwards pass
-            ks, Ks, quu = backward_pass(xs, us, xstar, Q, R, mu)
-            
-            if quu <= 0: # not positive definite, increase mu
-                is_pos_def = False
-                mu_delta = max(mu_delta_0, mu_delta*mu_delta_0)
-                mu = max(mu_min, mu*mu_delta)
-            else:   # is positive definite, decrease mu
-                is_pos_def = True
-                mu_delta = min(1/mu_delta_0, mu_delta/mu_delta_0)
-                if mu*mu_delta > mu_min:
-                    mu = mu*mu_delta
-                else:
-                    mu = 0
+            # calculate the cost for the current state
+            print(f'{J_prev=}')
+            J_curr = (total_cost_func(xs_test, us_test, xstar, Q, R, Qf))
+            print(f'{J_curr=}')
 
-        # perform the forward pass
-        us, xs = forward_pass(ks, Ks, N, xs, us)
+            # calculate the difference in cost for the previous and current state
+            delta_J = J_prev - J_curr
+            print(f'{delta_J=}')
 
+            # calculate the expected total cost reduction
+            expected_delta_J = -total_cost_reduction(alpha, ks, qus, quus)
+            print(f'{expected_delta_J=}')
+
+            # caclulate the delta_J threshold
+            z = delta_J/expected_delta_J
+            print(f'{z=}')
+
+            # if z > c:
+            if z >= 0:
+                cost_reduction_sufficient = True
+            # if the cost reduction is not sufficient, reduce alpha
+            else:
+                alpha = alpha*gamma
+                print(f'{alpha=}')
+
+                if alpha < 1e-6:
+                    print('alpha is small')
+                    break
+
+            cost_diff = abs(J_prev - J_curr)
+            print(f'{cost_diff=}')
+
+        us = us_test
+        xs = xs_test
         i += 1
-
+        
     # plot the optimal state trajectory over time
     # t_vec_x = np.linspace(0, Tf, N)
     # fig, axs = plt.subplots(3,1,sharex=True)
