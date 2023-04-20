@@ -161,7 +161,6 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom):
         # print(delta_u)
         # print(curr_u)
         # obtain the next state from the dynamics function
-        #next_x = dynamics_analytic(curr_x.reshape(1,6), curr_u) # (1,6)
         next_x = dynamics_rk4(curr_x.reshape(1,6), curr_u) # (1,6)
 
         # save the current u and the next x to the stored vectors of us and xs

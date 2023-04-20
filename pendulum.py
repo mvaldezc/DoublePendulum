@@ -64,14 +64,6 @@ def dynamics_analytic(state, action):
     qdot = torch.tensor([xdot, th1dot, th2dot]).reshape(B,3,1)
     
     qdotdot = torch.linalg.inv(M)@(U - C@qdot - G - D)
-    
-    # print("analytical M ", torch.inverse(M.reshape(3,3)))
-    #print("analytical M ", M.reshape(3,3))
-    #print("analytical C ", (C@qdot + G).reshape(1, 3))
-    #print("analytical pos ", torch.tensor([x, th1, th2]).reshape(3,))
-    #print("analytical vel ", torch.tensor([xdot, th1dot, th2dot]).reshape(3,))
-    #print("analytical acc ", qdotdot.reshape(3,))
-    #print("analytical D ", (-D).reshape(1, 3))
 
     # Compute next state
 
@@ -138,30 +130,9 @@ def rollout_dynamics(N, init_state):
     for t in range(N-1):
         curr_state = xs_nom[t, :].reshape(1,6)
         curr_action = us_nom[t, :].reshape(1,1)
-        #xs_nom[t+1, :] = dynamics_analytic(curr_state, curr_action)
         xs_nom[t+1, :] = dynamics_rk4(curr_state, curr_action)
 
     return xs_nom, us_nom
-
-def linearize_pytorch(state, control):
-    """
-        Linearizes cartpole dynamics around linearization point (state, control). Uses autograd of analytic dynamics
-    Args:
-        state: torch.tensor of shape (6,) representing cartpole state
-        control: torch.tensor of shape (1,) representing the force to apply
-
-    Returns:
-        A: torch.tensor of shape (6, 6) representing Jacobian df/dx for dynamics f
-        B: torch.tensor of shape (6, 1) representing Jacobian df/du for dynamics f
-
-    """
-    state = torch.unsqueeze(state, 0)
-    control = torch.unsqueeze(control, 0)
-    J = torch.autograd.functional.jacobian(dynamics_analytic, (state, control))
-    A = J[0].reshape((6, 6))
-    B = J[1].reshape((6, 1))
-
-    return A, B
 
 def linearize_dynamics(state, control):
     """
@@ -315,7 +286,7 @@ def batched_dynamics(env, state, control):
         next_state = dynamics(env, state, control)
     return next_state
 
-def new_dynamics(state, action):
+def dynamics_accel(state, action):
     """
         Computes x_t+1 = f(x_t, u_t) using analytic model of dynamics in Pytorch
         Should support batching
@@ -398,27 +369,6 @@ def new_dynamics(state, action):
 
     qdotdot = torch.linalg.inv(M)@(H@u - C@qdot - G - D)
 
-    # Compute next state
-
-    #xdd = qdotdot[:, 0]
-    #th1dd = qdotdot[:, 1]
-    #th2dd = qdotdot[:, 2]
-
-    # next_xdot = xdot.reshape(B,1) + xdd*dt
-    # next_th1dot = th1dot.reshape(B,1) + th1dd*dt
-    # next_th2dot = th2dot.reshape(B, 1) + th2dd*dt
-
-    # next_x = x.reshape(B,1) + next_xdot*dt
-    # next_th1 = th1.reshape(B,1) + next_th1dot*dt
-    # next_th2 = th2.reshape(B,1) + next_th2dot*dt
-
-    # # Wrap angles
-
-    # next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
-    # next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
-
-    #next_state = torch.cat((next_x, next_th1, next_th2, next_xdot, next_th1dot, next_th2dot), 1)
-
     return qdotdot.reshape(B, 3)
 
 
@@ -432,19 +382,19 @@ def dynamics_rk4(state, action):
     q = state[:, :3].reshape(B, 3)
     qdot = state[:, 3:].reshape(B, 3)
     
-    k1_qd = dt*new_dynamics(state, action)
+    k1_qd = dt*dynamics_accel(state, action)
     k1_q = dt*qdot
     k1 = torch.cat((k1_q, k1_qd), 1)
 
-    k2_qd = dt*new_dynamics(state + k1/2, action)
+    k2_qd = dt*dynamics_accel(state + k1/2, action)
     k2_q = dt*(qdot + k1_qd/2)
     k2 = torch.cat((k2_q, k2_qd), 1)
 
-    k3_qd = dt*new_dynamics(state + k2/2, action)
+    k3_qd = dt*dynamics_accel(state + k2/2, action)
     k3_q = dt*(qdot + k2_qd/2)
     k3 = torch.cat((k3_q, k3_qd), 1)
 
-    k4_qd = dt*new_dynamics(state + k3, action)
+    k4_qd = dt*dynamics_accel(state + k3, action)
     k4_q = dt*(qdot + k3_qd)
     k4 = torch.cat((k4_q, k4_qd), 1)    
 

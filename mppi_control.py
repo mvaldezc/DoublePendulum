@@ -28,33 +28,6 @@ def get_cartpole_mppi_hyperparams():
     return hyperparams
 
 
-def get_panda_mppi_hyperparams():
-    """
-    Returns a dictionary containing the hyperparameters for running MPPI on the panda environment
-    The required parameters are:
-     * lambda: float parameter between 0. and 1. used to weight samples.
-     * Q: torch tensor fo shape (state_size, state_size) representing the state quadratic cost.
-     * noise_sigma: torch tensor fo size (action_size, action_size) representing the covariance matrix  of the random action perturbations.
-    """
-    action_size = 7
-    state_size = 14
-    hyperparams = {
-        'lambda': None,
-        'Q': None,
-        'noise_sigma': None,
-    }
-    # --- Your code here
-
-    hyperparams['lambda'] = 0.1
-    hyperparams['Q'] = torch.diag(torch.Tensor(
-        [10, 10, 10, 10, 10, 10, 10, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]))
-    hyperparams['noise_sigma'] = torch.diag(torch.Tensor(
-        [12, 12, 12, 12, 12, 12, 12]))
-
-    # ---
-    return hyperparams
-
-
 class MPPIController(object):
 
     def __init__(self, env, num_samples, horizon, hyperparams):
