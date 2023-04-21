@@ -21,8 +21,9 @@ def get_cartpole_mppi_hyperparams():
     # --- Your code here
 
     hyperparams['lambda'] = 0.1
-    hyperparams['Q'] = torch.diag(torch.Tensor([8, 20, 20, 1, 0.5, 0.5]))
-    hyperparams['noise_sigma'] = torch.Tensor([[20]])
+    hyperparams['Q'] = torch.diag(torch.Tensor([8, 200, 200, 1, 0.5, 0.5]))
+    #hyperparams['Q'] = torch.diag(torch.tensor([50.0, 120.0, 120.0, 1.0, 22.0, 22.0]))
+    hyperparams['noise_sigma'] = torch.Tensor([[80]])
 
     # ---
     return hyperparams

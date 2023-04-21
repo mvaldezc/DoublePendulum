@@ -125,8 +125,8 @@ def rollout_dynamics(N, init_state):
     #xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
     xs_nom[0, :] = init_state.reshape(6,)
     # apply a random uk to the dynamical system in open loop
-    us_nom = torch.zeros((N-1, 1))
-    #us_nom = 0.2*torch.randn((N-1, 1))
+    #us_nom = torch.zeros((N-1, 1))
+    us_nom = 0.1*torch.randn((N-1, 1))
     #us_nom = clip_rand_action(us_nom)
     #us_nom = torch.zeros((N-1, 1))
     # loop through T the number of timesteps
