@@ -30,11 +30,16 @@ def obtain_nominal_trajectory(current_state, N, Tf):
 # define the running cost function
 def running_cost_func(curr_x, curr_u, xstar, Q, R):
     # running_cost = 0.5*(curr_x - xstar).T @ Q @ (curr_x - xstar) + 0.5 * curr_u * R * curr_u
+    curr_x = curr_x.reshape(6, 1)
+    xstar = xstar.reshape(6, 1)
+    curr_u = curr_u.reshape(1, 1)
     running_cost = 0.5*(curr_x - xstar).T @ Q @ (curr_x - xstar) + 0.5 * curr_u.T @ R @ curr_u
     return running_cost
 
 # define the terminal cost function
 def term_cost_func(final_x, xstar, Qf):
+    final_x = final_x.reshape(6, 1)
+    xstar = xstar.reshape(6, 1)
     term_cost = 0.5 * (final_x - xstar).T @ Qf @ (final_x - xstar)
     return term_cost
 
@@ -176,6 +181,7 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom, alpha):
         delta_u = alpha*k + torch.dot(K.squeeze(-1), delta_x.squeeze(-1))
         # calculate the new u from delta u
         curr_u = curr_nom_u + delta_u # (1,1)
+        curr_u = torch.clamp(curr_u, -3, 3)
         # obtain the next state from the dynamics function
         next_x = dynamics_rk4(curr_x.reshape(1,6), curr_u) # (1,6)
 
@@ -186,7 +192,9 @@ def forward_pass(ks, Ks, N, xs_nom, us_nom, alpha):
     return us, xs
 
 ## perform iLQR
-def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_delta, mu_min, Q, R, Qf, alpha, c, gamma, eps):
+
+
+def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_delta, mu_min, Q, R, Qf, alpha, c, gamma, eps, alpha_min):
 
     # perform the rollout to obtain the nominal trajectory
     xs_nom, us_nom = obtain_nominal_trajectory(current_state, N, Tf)
@@ -245,13 +253,13 @@ def run_ilqr(current_state, N, Tf, num_iterations, xstar, mu, mu_delta_0, mu_del
 
             if z > c:
             #if z >= 0:
-                cost_reduction_sufficient = True
+               cost_reduction_sufficient = True
             # if the cost reduction is not sufficient, reduce alpha
             else:
                 alpha = alpha*gamma
                 #rint(f'{alpha=}')
 
-                if alpha < 1e-6:
+                if alpha < alpha_min:
                     #print('alpha is small')
                     break
 

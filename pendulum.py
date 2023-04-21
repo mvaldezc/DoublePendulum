@@ -81,8 +81,8 @@ def dynamics_analytic(state, action):
 
     # Wrap angles
 
-    next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
-    next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
+    #next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
+    #next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
 
     next_state = torch.cat((next_x, next_th1, next_th2, next_xdot, next_th1dot, next_th2dot), 1)
 
@@ -125,7 +125,10 @@ def rollout_dynamics(N, init_state):
     #xs_nom[0, :] = change_of_coords(init_state).reshape(6,)
     xs_nom[0, :] = init_state.reshape(6,)
     # apply a random uk to the dynamical system in open loop
-    us_nom = torch.randn((N-1, 1))
+    us_nom = torch.zeros((N-1, 1))
+    #us_nom = 0.2*torch.randn((N-1, 1))
+    #us_nom = clip_rand_action(us_nom)
+    #us_nom = torch.zeros((N-1, 1))
     # loop through T the number of timesteps
     for t in range(N-1):
         curr_state = xs_nom[t, :].reshape(1,6)
@@ -403,8 +406,8 @@ def dynamics_rk4(state, action):
     next_th1 = next_state[:, 1]
     next_th2 = next_state[:, 2]
 
-    next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
-    next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
+    #next_th1 = torch.atan2(torch.sin(next_th1), torch.cos(next_th1))
+    #next_th2 = torch.atan2(torch.sin(next_th2), torch.cos(next_th2))
 
     next_state[:, 1] = next_th1
     next_state[:, 2] = next_th2
